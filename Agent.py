@@ -4,13 +4,8 @@ Logical Agent for programming assignment 2.
 
 
 class Agent:
-    def __init__(self):
-        self._wumpusWorld = [
-            ['', '', '', ''],  # Rooms [1,1] to [4,1]
-            ['', '', 'P', ''],  # Rooms [1,2] to [4,2]
-            ['', 'W', '', ''],  # Rooms [1,3] to [4,3]
-            ['', '', '', ''],  # Rooms [1,4] to [4,4]
-        ]  # This is the wumpus world shown in the assignment question.
+    def __init__(self, world):
+        self._wumpusWorld = world
         # A different instance of the wumpus world will be used for evaluation.
         self._curLoc = [1, 1]
         self._isAlive = True

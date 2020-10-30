@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
+import numpy as np
 from Agent import *  # See the Agent.py file
 from copy import deepcopy
+from pprint import PrettyPrinter
+pp = PrettyPrinter(indent=4)
 
 
 # All your code can go here.
@@ -17,8 +20,6 @@ literals = [
 
 index_to_literals = dict(zip(range(32), literals))
 literals_to_index = dict(zip(literals, range(32)))
-
-# Representation follows DIMACS format without trailing zero
 
 initial_clauses = [
     "!W11", "!P11", "!W44", "!P44",
@@ -84,58 +85,255 @@ def check_available_blocks(location):
         available.remove("Up")
 
     # print(available)
-
+    actions = []
     blocks = []
     if "Up" in available:
         blocks.append([x, y+1])
+        actions.append("Up")
 
     if "Right" in available:
         blocks.append([x+1, y])
+        actions.append("Right")
 
     if "Down" in available:
         blocks.append([x, y-1])
+        actions.append("Down")
 
     if "Left" in available:
         blocks.append([x-1, y])
+        actions.append("Left")
 
-    return blocks
+    return blocks, actions
 
 
-def test():
-    ag = Agent()
+def getSymbols(clauses):
+    symbols = set()
+    split_clauses = set()
+    for clause in clauses:
+        for sclause in clause.split(" "):
+            if sclause != "":
+                split_clauses.add(sclause)
+        # print(split_clauses)
+
+    for sclause in split_clauses:
+        if sclause[0] == "!":
+            symbols.add(sclause[1:])
+        else:
+            symbols.add(sclause)
+    return symbols
+
+
+def getLiterals(clause):
+    literals = set()
+    for lit in clause.split(" "):
+        if lit != "":
+            literals.add(lit)
+    return literals
+
+
+def neg(c):
+    if c[0] == "!":
+        return c[1:]
+    else:
+        return "!"+c
+
+
+def symbol(c):
+    if c[0] == "!":
+        return c[1:]
+    else:
+        return c
+
+
+def evaluate_clause(clause, model):
+    flag = False
+    for c in getLiterals(clause):
+        if c not in model and neg(c) not in model:
+            flag = True
+        elif symbol(c) in model and model[symbol(c)] == (c[0] != "!"):
+            return True
+
+    if flag:
+        return None
+    return False
+
+
+def findPureSymbol(symbols, clauses):
+    for s in symbols:
+        found_pos, found_neg = False, False
+        for c in clauses:
+            if not found_pos and s in getLiterals(c):
+                found_pos = True
+            if not found_neg and neg(s) in getLiterals(c):
+                found_neg = True
+        if found_pos != found_neg:
+            return s, found_pos
+    return None, None
+
+
+def findUnitClause(clauses, model):
+    for clause in clauses:
+        count = 0
+        for literal in getLiterals(clause):
+            sym = symbol(literal)
+            if sym in model and model[sym] == (literal[0] != "!"):
+                return None, None
+            if sym not in model:
+                count += 1
+                P, value = sym, (literal[0] != "!")
+        if count == 1:
+            return P, value
+    return None, None
+
+
+def remove(sym, symbols):
+    return {x for x in symbols if x != sym}
+
+
+def extend(model, P, value):
+    tmodel = deepcopy(model)
+    tmodel[P] = value
+    return tmodel
+
+
+def dpll(clauses, symbols, model) -> bool:
+    # print(clauses, symbols, model)
+    unknown_clauses = []
+    for clause in clauses:
+        val = evaluate_clause(clause, model)
+        if val is False:
+            return False
+        if val is None:
+            unknown_clauses.append(clause)
+    if not unknown_clauses:
+        return model
+    P, value = findPureSymbol(symbols, unknown_clauses)
+    if P:
+        return dpll(clauses, remove(P, symbols), extend(model, P, value))
+    P, value = findUnitClause(clauses, model)
+    if P:
+        return dpll(clauses, remove(P, symbols), extend(model, P, value))
+
+    P, symbols = list(symbols)[0], list(symbols)[1:]
+
+    return (dpll(clauses, symbols, extend(model, P, True)) or
+            dpll(clauses, symbols, extend(model, P, False)))
+
+
+def dpll_satisfiable(clauses) -> bool:
+    symbols = getSymbols(clauses)
+    # print(clauses, symbols)
+    return dpll(clauses, symbols, dict())
+
+
+def isSafe(block, clauses):
+    # run dpll with
+    # KB entails !P(block) and KB entails !W(block)
+    # Check KB and P(block) is unsat
+    # Check KB and W(block) is unsat
+    tclauses1 = deepcopy(clauses)
+    tclauses2 = deepcopy(clauses)
+
+    tclauses1.append(f"P{block[0]}{block[1]}")
+    tclauses2.append(f"W{block[0]}{block[1]}")
+
+    hasPit = dpll_satisfiable(tclauses1)
+    hasWumpus = dpll_satisfiable(tclauses2)
+    # print(hasPit if hasPit == False else True, hasWumpus if hasWumpus == False else True)
+    return ((hasPit == False) and (hasWumpus == False))
+
+
+def test(ag):
     clauses = deepcopy(initial_clauses)
-    ag.TakeAction("Up")
-    ag.TakeAction("Up")
-    ag.TakeAction("Up")
-    ag.TakeAction("Right")
-    ag.TakeAction("Right")
-    ag.TakeAction("Down")
 
     currLoc = ag.FindCurrentLocation()
+
+    visited = [[0, 0, 0, 0],
+               [0, 0, 0, 0],
+               [0, 0, 0, 0],
+               [0, 0, 0, 0], ]
+    lastMove = None
+    rework = False
+    moves = []
+
     while(currLoc != [4, 4]):
-        blocks = check_available_blocks(currLoc)
+        blocks, actions = check_available_blocks(currLoc)
 
-        # Percieve and add to KB
-        percept = ag.PerceiveCurrentLocation()
-        print(percept)
-        if percept[0] == True:  # Pit in adjacent location
-            clause = ""
-            for block in blocks:
-                mystr = f"P{block[0]}{block[1]} "
-                clause += mystr
-            print(clause)
-            clauses.append(clause)
-        if percept[1] == True:  # Wumpus in adjacent location
-            clause = ""
-            for block in blocks:
-                mystr = f"W{block[0]}{block[1]} "
-                clause += mystr
-            print(clause)
-            clauses.append(clause)
+        # Percieve and add to KB if not visited
+        # print(f"{currLoc} Visited?: {visited[currLoc[1]-1][currLoc[0]-1]}")
+        if visited[currLoc[1]-1][currLoc[0]-1] == 0:
+            percept = ag.PerceiveCurrentLocation()
+            rework = False
+            # print("Percept: ", percept)
+            visited[currLoc[1]-1][currLoc[0]-1] = 1
+            if percept[0] == True:  # Pit in adjacent location
+                clause = ""
+                for block in blocks:
+                    mystr = f"P{block[0]}{block[1]} "
+                    clause += mystr
+                # print(clause)
+                clauses.append(clause)
+            else:  # No pit in adjacent location
+                clause = ""
+                for block in blocks:
+                    mystr = f"!P{block[0]}{block[1]}"
+                    clauses.append(mystr)  # And not or condition
+            if percept[1] == True:  # Wumpus in adjacent location
+                clause = ""
+                for block in blocks:
+                    mystr = f"W{block[0]}{block[1]} "
+                    clause += mystr
+                # print(clause)
+                clauses.append(clause)
+            else:  # No wumpus in adjacent location
+                clause = ""
+                for block in blocks:
+                    mystr = f"!W{block[0]}{block[1]}"
+                    clauses.append(mystr)  # And not or condition
 
-        # Move to block in blocks if safe (check if !P(block) and !W(block), after added to clauses is unsatisfiable)
+        # TODO: Move to block in blocks if safe (check if !P(block) and !W(block), after added to clauses is unsatisfiable)
         #                                 (if satisfiable, add to kb that block is unsafe)
-        currLoc = [4, 4]
+
+        for block, action in zip(blocks, actions):
+            # print(block, action)
+            if isSafe(block, clauses) and (visited[block[1]-1][block[0]-1] == 0 or rework == True):
+                if rework and previousMove == action:
+                    print(f"Do not perform {previousMove} while reworking")
+                    continue
+                ag.TakeAction(action)
+                clauses.append(f"!W{block[0]}{block[1]}")
+                clauses.append(f"!P{block[0]}{block[1]}")
+                lastMove = action
+                moves.append(action)
+                break
+            else:
+                # Unsure if safe or not safe as percept not fully developed
+                # Add to KB
+                pass
+        pLoc = currLoc
+        currLoc = ag.FindCurrentLocation()
+        if currLoc == pLoc:
+            # print("No moves found: backtracking")
+            if lastMove == None:
+                print("Time to rework through")
+                pp.pprint(visited)
+                rework = True
+            elif lastMove == "Up":
+                ag.TakeAction("Down")
+                previousMove = lastMove  # If reworking, do not do this move
+            elif lastMove == "Right":
+                ag.TakeAction("Left")
+                previousMove = lastMove  # If reworking, do not do this move
+            elif lastMove == "Down":
+                ag.TakeAction("Up")
+                previousMove = lastMove  # If reworking, do not do this move
+            elif lastMove == "Left":
+                ag.TakeAction("Right")
+                previousMove = lastMove  # If reworking, do not do this move
+            lastMove = None
+            currLoc = ag.FindCurrentLocation()
+
+    print("Reached goal")
 
 
 def main():
@@ -149,5 +347,37 @@ def main():
     print('Percept', ag.PerceiveCurrentLocation())
 
 
+def exhaustive_search():
+    count = 0
+    for w in range(2, 15):
+        for p in range(2, 15):
+            world = [
+                ['', '', '', ''],  # Rooms [1,1] to [4,1]
+                ['', '', '', ''],  # Rooms [1,2] to [4,2]
+                ['', '', '', ''],  # Rooms [1,3] to [4,3]
+                ['', '', '', ''],  # Rooms [1,4] to [4,4]
+            ]
+            if p != w and p != 4 and w != 4:
+                count += 1
+                if count < 0:
+                    continue
+                if count == 99 or count == 130:
+                    continue
+                print(f"World #{count}")
+                world[p % 4][p//4] = 'P'
+                world[w % 4][w//4] = 'W'
+                print(f"{world[3]}")
+                print(f"{world[2]}")
+                print(f"{world[1]}")
+                print(f"{world[0]}")
+                ag = Agent(world)
+                test(ag)
+                if count % 20 == 0:
+                    print("--------------------------------------------------------------")
+                    print("Worlds seen: ", count)
+                    print("--------------------------------------------------------------")
+    print(count)
+
+
 if __name__ == '__main__':
-    test()
+    exhaustive_search()
