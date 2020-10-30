@@ -308,7 +308,6 @@ def test(ag):
                 break
             else:
                 # Unsure if safe or not safe as percept not fully developed
-                # Add to KB
                 pass
         pLoc = currLoc
         currLoc = ag.FindCurrentLocation()
@@ -334,17 +333,6 @@ def test(ag):
             currLoc = ag.FindCurrentLocation()
 
     print("Reached goal")
-
-
-def main():
-    ag = Agent()
-    print('curLoc', ag.FindCurrentLocation())
-    print('Percept [breeze, stench] :', ag.PerceiveCurrentLocation())
-    ag.TakeAction('Right')
-    print('Percept', ag.PerceiveCurrentLocation())
-    ag.TakeAction('Up')
-    print(ag.FindCurrentLocation())
-    print('Percept', ag.PerceiveCurrentLocation())
 
 
 def exhaustive_search():
